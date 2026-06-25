@@ -1,3 +1,5 @@
+import sys
+print(f"Python version: {sys.version}")
 import os
 import mysql.connector
 from telegram import Update, ReplyKeyboardMarkup

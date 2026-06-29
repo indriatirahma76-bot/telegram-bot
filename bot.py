@@ -13,16 +13,49 @@ DB_NAME = os.environ.get("DB_NAME", "telegram.bot")
 
 user_status = {}
 
-def simpan_nomor(nomor):
+def koneksi():
+    return mysql.connector.connect(
+        host=DB_HOST,
+        user=DB_USER,
+        password=DB_PASSWORD,
+        database=DB_NAME
+    )
+
+def cek_terdaftar(telegram_id):
     try:
-        conn = mysql.connector.connect(
-            host=DB_HOST,
-            user=DB_USER,
-            password=DB_PASSWORD,
-            database=DB_NAME
-        )
+        conn = koneksi()
         cursor = conn.cursor()
-        cursor.execute("INSERT INTO nomor_jual (nomor) VALUES (%s)", (nomor,))
+        cursor.execute("SELECT * FROM pengguna WHERE telegram_id = %s", (telegram_id,))
+        hasil = cursor.fetchone()
+        conn.close()
+        return hasil
+    except Exception as e:
+        print(f"Error: {e}")
+        return None
+
+def simpan_pengguna(telegram_id, id_digipos, nama, nomor_hp):
+    try:
+        conn = koneksi()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO pengguna (telegram_id, id_digipos, nama, nomor_hp) VALUES (%s, %s, %s, %s)",
+            (telegram_id, id_digipos, nama, nomor_hp)
+        )
+        conn.commit()
+        conn.close()
+        return True
+    except Exception as e:
+        print(f"Error: {e}")
+        return False
+
+def simpan_nomor(nomor, id_digipos, nama_pelapor):
+    try:
+        conn = koneksi()
+        cursor = conn.cursor()
+        cursor.execute(
+            "INSERT INTO nomor_jual (nomor, id_digipos, nama_pelapor) VALUES (%s, %s, %s)",
+            (nomor, id_digipos, nama_pelapor)
+        )
         conn.commit()
         conn.close()
         return True
@@ -31,39 +64,86 @@ def simpan_nomor(nomor):
         return False
 
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_status[update.effective_user.id] = "menu"
-    menu = ReplyKeyboardMarkup(
-        [["1. Masukkan nomor yang Anda jual"]],
-        resize_keyboard=True
-    )
-    await update.message.reply_text(
-        "Selamat datang di MyStore Bot 👋\nSilakan pilih menu di bawah ini.",
-        reply_markup=menu
-    )
+    telegram_id = update.effective_user.id
+    pengguna = cek_terdaftar(telegram_id)
+
+    if pengguna:
+        user_status[telegram_id] = "menu"
+        nama = pengguna[3]
+        menu = ReplyKeyboardMarkup(
+            [["1. Laporkan Nomor HP"]],
+            resize_keyboard=True
+        )
+        await update.message.reply_text(
+            f"Selamat datang kembali {nama}! 👋\nSilakan pilih menu di bawah ini.",
+            reply_markup=menu
+        )
+    else:
+        user_status[telegram_id] = "daftar_id_digipos"
+        await update.message.reply_text(
+            "Selamat datang! 👋\nAnda belum terdaftar.\n\nSilakan registrasi dulu.\n\nMasukkan ID Digipos Anda:"
+        )
 
 async def terima_pesan(update: Update, context: ContextTypes.DEFAULT_TYPE):
-    user_id = update.effective_user.id
+    telegram_id = update.effective_user.id
     teks = update.message.text.strip()
-    if teks == "1. Masukkan nomor yang Anda jual":
-        user_status[user_id] = "tunggu_nomor"
+    status = user_status.get(telegram_id, "")
+
+    if status == "daftar_id_digipos":
+        context.user_data["id_digipos"] = teks
+        user_status[telegram_id] = "daftar_nama"
+        await update.message.reply_text("Masukkan nama Anda:")
+
+    elif status == "daftar_nama":
+        context.user_data["nama"] = teks
+        user_status[telegram_id] = "daftar_nomor_hp"
+        await update.message.reply_text("Masukkan nomor HP Anda:")
+
+    elif status == "daftar_nomor_hp":
+        context.user_data["nomor_hp"] = teks
+        id_digipos = context.user_data["id_digipos"]
+        nama = context.user_data["nama"]
+        nomor_hp = teks
+
+        berhasil = simpan_pengguna(telegram_id, id_digipos, nama, nomor_hp)
+        if berhasil:
+            user_status[telegram_id] = "menu"
+            menu = ReplyKeyboardMarkup(
+                [["1. Laporkan Nomor HP"]],
+                resize_keyboard=True
+            )
+            await update.message.reply_text(
+                f"✅ Registrasi berhasil!\nSelamat datang {nama}!\n\nSilakan pilih menu di bawah ini.",
+                reply_markup=menu
+            )
+        else:
+            await update.message.reply_text("❌ Gagal registrasi. Coba lagi dengan /start")
+
+    elif teks == "1. Laporkan Nomor HP":
+        user_status[telegram_id] = "tunggu_nomor"
         await update.message.reply_text(
-            "Silakan masukkan nomor yang Anda jual\n(contoh: 6281234567890)"
+            "Masukkan nomor HP yang ingin dilaporkan:\n(contoh: 6281234567890)"
         )
-    elif user_status.get(user_id) == "tunggu_nomor":
+
+    elif status == "tunggu_nomor":
         if teks.isdigit() and len(teks) >= 10:
-            berhasil = simpan_nomor(teks)
+            pengguna = cek_terdaftar(telegram_id)
+            id_digipos = pengguna[2]
+            nama_pelapor = pengguna[3]
+
+            berhasil = simpan_nomor(teks, id_digipos, nama_pelapor)
             if berhasil:
-                user_status[user_id] = "menu"
+                user_status[telegram_id] = "menu"
                 menu = ReplyKeyboardMarkup(
-                    [["1. Masukkan nomor yang Anda jual"]],
+                    [["1. Laporkan Nomor HP"]],
                     resize_keyboard=True
                 )
                 await update.message.reply_text(
-                    f"✅ Berhasil!\nNomor {teks} telah disimpan ke database.\n\nSilakan pilih menu di bawah ini.",
+                    f"✅ Berhasil!\nNomor {teks} telah dilaporkan!\n\nSilakan pilih menu di bawah ini.",
                     reply_markup=menu
                 )
             else:
-                await update.message.reply_text("❌ Gagal menyimpan nomor. Coba lagi.")
+                await update.message.reply_text("❌ Gagal melaporkan nomor. Coba lagi.")
         else:
             await update.message.reply_text(
                 "⚠️ Nomor tidak valid!\nMasukkan nomor HP yang benar.\nContoh: 6281234567890"

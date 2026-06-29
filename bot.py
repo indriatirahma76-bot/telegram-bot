@@ -69,7 +69,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
 
     if pengguna:
         user_status[telegram_id] = "menu"
-        nama = pengguna[3]
+        nama = pengguna[2]
         menu = ReplyKeyboardMarkup(
             [["1. Laporkan Nomor HP"]],
             resize_keyboard=True
@@ -128,8 +128,8 @@ async def terima_pesan(update: Update, context: ContextTypes.DEFAULT_TYPE):
     elif status == "tunggu_nomor":
         if teks.isdigit() and len(teks) >= 10:
             pengguna = cek_terdaftar(telegram_id)
-            id_digipos = pengguna[2]
-            nama_pelapor = pengguna[3]
+            id_digipos = pengguna[1]
+            nama_pelapor = pengguna[2]
 
             berhasil = simpan_nomor(teks, id_digipos, nama_pelapor)
             if berhasil:
